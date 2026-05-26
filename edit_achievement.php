@@ -8,40 +8,58 @@ $id = (int)$_GET['id'];
 $achievement = $conn->query("SELECT * FROM achievements WHERE id = $id")->fetch_assoc();
 if(!$achievement) die("Achievement not found.");
 
-function ensure_dir($dir) { if (!is_dir($dir)) mkdir($dir, 0777, true); }
+function ensure_dir($dir) {
+    if (!is_dir($dir)) mkdir($dir, 0777, true);
+}
 
-function handle_achievement_zip_upload($file, $achievement_id) {
+function extract_achievement_zip($file, $achievement_id) {
     if(empty($file['name'])) return false;
     $upload_dir = "uploads/achievements/$achievement_id/";
     ensure_dir($upload_dir);
     $ext = strtolower(pathinfo($file['name'], PATHINFO_EXTENSION));
     if($ext != 'zip') return false;
-    $original_zip = $upload_dir . "photos.zip";
-    if(move_uploaded_file($file['tmp_name'], $original_zip)){
+    $zip_path = $upload_dir . "photos.zip";
+    if(move_uploaded_file($file['tmp_name'], $zip_path)){
         $zip = new ZipArchive;
-        if($zip->open($original_zip) === TRUE){
-            $temp_extract = $upload_dir . "temp/";
-            ensure_dir($temp_extract);
-            $zip->extractTo($temp_extract);
+        if($zip->open($zip_path) === TRUE){
+            $temp_dir = $upload_dir . "temp_extract/";
+            ensure_dir($temp_dir);
+            $zip->extractTo($temp_dir);
             $zip->close();
             
             $gallery_dir = $upload_dir . "gallery/";
             ensure_dir($gallery_dir);
             // Clear old gallery
-            array_map('unlink', glob($gallery_dir . "*.*"));
-            // Flatten and copy new images
-            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temp_extract));
-            foreach($iterator as $file) {
-                if($file->isFile() && preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $file->getFilename())) {
-                    copy($file->getPathname(), $gallery_dir . $file->getFilename());
+            $old = glob($gallery_dir . "*.*");
+            foreach($old as $f) if(is_file($f)) unlink($f);
+            
+            // Recursively find all images and copy to gallery root (flatten)
+            $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temp_dir, RecursiveDirectoryIterator::SKIP_DOTS));
+            $copied = 0;
+            foreach($iterator as $fileObj) {
+                if($fileObj->isFile() && preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $fileObj->getFilename())) {
+                    $dest = $gallery_dir . $fileObj->getFilename();
+                    // Handle duplicate filenames
+                    $counter = 1;
+                    $info = pathinfo($dest);
+                    while(file_exists($dest)) {
+                        $dest = $info['dirname'] . '/' . $info['filename'] . "_$counter." . $info['extension'];
+                        $counter++;
+                    }
+                    copy($fileObj->getPathname(), $dest);
+                    $copied++;
                 }
             }
-            // Clean up temp
-            $files = glob($temp_extract . "*.*");
-            foreach($files as $f) if(is_file($f)) unlink($f);
-            rmdir($temp_extract);
-            unlink($original_zip);
-            return true;
+            
+            // Delete temp folder recursively
+            $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temp_dir, RecursiveDirectoryIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
+            foreach($files as $f) {
+                if($f->isDir()) rmdir($f->getRealPath());
+                else unlink($f->getRealPath());
+            }
+            rmdir($temp_dir);
+            unlink($zip_path); // optional: delete zip after extraction
+            return $copied > 0;
         }
     }
     return false;
@@ -50,13 +68,13 @@ function handle_achievement_zip_upload($file, $achievement_id) {
 $msg = '';
 if(isset($_POST['update_photos'])){
     if(isset($_FILES['photos_zip']) && $_FILES['photos_zip']['error']==0){
-        if(handle_achievement_zip_upload($_FILES['photos_zip'], $id)){
+        if(extract_achievement_zip($_FILES['photos_zip'], $id)){
             $msg = "<div class='alert alert-success'>Photos updated successfully.</div>";
         } else {
-            $msg = "<div class='alert alert-danger'>Failed to process ZIP file.</div>";
+            $msg = "<div class='alert alert-danger'>Failed to process ZIP file. Ensure it contains images (JPG, PNG, GIF, WEBP).</div>";
         }
     } else {
-        $msg = "<div class='alert alert-warning'>No file selected.</div>";
+        $msg = "<div class='alert alert-warning'>Please select a ZIP file.</div>";
     }
 }
 ?>
@@ -90,7 +108,7 @@ if(isset($_POST['update_photos'])){
         <form method="POST" enctype="multipart/form-data">
             <div class="mb-3">
                 <label class="form-label">Upload New Photos (ZIP only)</label>
-                <input type="file" name="photos_zip" class="form-control" accept=".zip">
+                <input type="file" name="photos_zip" class="form-control" accept=".zip" required>
                 <small class="text-muted">Upload a ZIP containing all achievement photos (old gallery will be replaced).</small>
             </div>
             <button type="submit" name="update_photos" class="btn btn-primary w-100"><i class="fas fa-upload"></i> Update Photos</button>
@@ -103,10 +121,12 @@ if(isset($_POST['update_photos'])){
             $gallery = "uploads/achievements/$id/gallery/";
             if(is_dir($gallery)){
                 $images = glob($gallery . "*.{jpg,jpeg,png,gif,webp}", GLOB_BRACE);
-                foreach($images as $img){
-                    echo "<div class='col-3 mb-2'><a href='$img' target='_blank'><img src='$img' class='gallery-thumb'></a></div>";
-                }
-            } else { echo "<p class='text-muted'>No photos yet.</p>"; }
+                if(count($images)>0){
+                    foreach($images as $img){
+                        echo "<div class='col-3 mb-2'><a href='$img' target='_blank'><img src='$img' class='gallery-thumb'></a></div>";
+                    }
+                } else { echo "<p class='text-muted'>No photos yet.</p>"; }
+            } else { echo "<p class='text-muted'>No gallery folder found.</p>"; }
             ?>
         </div>
     </div>
