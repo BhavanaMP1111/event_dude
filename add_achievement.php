@@ -26,16 +26,15 @@ function extract_achievement_zip($file, $achievement_id) {
             $zip->close();
             $gallery_dir = $upload_dir . "gallery/";
             ensure_dir($gallery_dir);
-            // Clear old gallery (just in case)
+            // Clear old gallery
             $old = glob($gallery_dir . "*.*");
             foreach($old as $f) if(is_file($f)) unlink($f);
-            // Recursively copy all images to gallery root (flatten)
+            // Flatten and copy images
             $iterator = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temp_dir, RecursiveDirectoryIterator::SKIP_DOTS));
             $copied = 0;
             foreach($iterator as $fileObj) {
                 if($fileObj->isFile() && preg_match('/\.(jpg|jpeg|png|gif|webp)$/i', $fileObj->getFilename())) {
                     $dest = $gallery_dir . $fileObj->getFilename();
-                    // Handle duplicate names
                     $counter = 1;
                     $info = pathinfo($dest);
                     while(file_exists($dest)) {
@@ -46,7 +45,7 @@ function extract_achievement_zip($file, $achievement_id) {
                     $copied++;
                 }
             }
-            // Clean temp
+            // Clean temp folder
             $files = new RecursiveIteratorIterator(new RecursiveDirectoryIterator($temp_dir, RecursiveDirectoryIterator::SKIP_DOTS), RecursiveIteratorIterator::CHILD_FIRST);
             foreach($files as $f) {
                 if($f->isDir()) rmdir($f->getRealPath());
@@ -84,9 +83,9 @@ if(isset($_POST['submit'])){
         $id = $stmt->insert_id;
         if(isset($_FILES['photos_zip']) && $_FILES['photos_zip']['error'] == 0){
             if(extract_achievement_zip($_FILES['photos_zip'], $id)){
-                $msg = "<div class='alert alert-success'>✓ Achievement added! Photos uploaded successfully.</div>";
+                $msg = "<div class='alert alert-success'>✓ Achievement added! Photos uploaded.</div>";
             } else {
-                $msg = "<div class='alert alert-warning'>✓ Achievement added, but photo upload failed. Ensure ZIP contains images.</div>";
+                $msg = "<div class='alert alert-warning'>✓ Achievement added, but photo upload failed. Ensure ZIP contains images (JPG, PNG, GIF, WEBP).</div>";
             }
         } else {
             $msg = "<div class='alert alert-success'>✓ Achievement added! (No photos)</div>";
@@ -115,6 +114,8 @@ if(isset($_POST['submit'])){
         .form-control:focus, .form-select:focus { border-color: #667eea; box-shadow: 0 0 0 3px rgba(102,126,234,0.1); }
         .btn-premium { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; padding: 12px; border-radius: 12px; width: 100%; font-weight: 600; }
         .btn-premium:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(102,126,234,0.4); }
+        .btn-secondary { background: #6c757d; border: none; }
+        .btn-secondary:hover { background: #5a6268; }
     </style>
 </head>
 <body>
@@ -187,7 +188,7 @@ if(isset($_POST['submit'])){
                 <button type="submit" name="submit" class="btn-premium">
                     <i class="fas fa-save me-2"></i> Add Achievement
                 </button>
-                <a href="all_achievements.php" class="btn btn-secondary w-100 mt-2">Back to Achievements</a>
+                <a href="admin_dashboard.php" class="btn btn-secondary w-100 mt-2">Back to Dashboard</a>
             </form>
         </div>
     </div>
